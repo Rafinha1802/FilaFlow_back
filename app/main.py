@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.core.config import CORS_ORIGINS, PROJECT_NAME, PROJECT_VERSION
 from app.core.database import engine, Base
+from app.core.migrations import run_migrations
 from app.seed import seed_data
 
 from app.routers import (
@@ -18,8 +19,9 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create tables and seed demo data
+    # Startup: create tables, run migrations and seed demo data
     Base.metadata.create_all(bind=engine)
+    run_migrations()
     seed_data()
     yield
     # Shutdown

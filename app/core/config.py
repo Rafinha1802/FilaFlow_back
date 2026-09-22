@@ -18,3 +18,8 @@ CORS_ORIGINS = [
 
 PROJECT_NAME = "FilaFlow API"
 PROJECT_VERSION = "1.0.0"
+
+# Security & JWT settings
+SECRET_KEY = os.getenv("SECRET_KEY", "filaflow-super-secret-jwt-key-change-in-production-2026")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")) # 24 hours

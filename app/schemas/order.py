@@ -16,6 +16,17 @@ class OrderResponse(OrderCreate):
     id: str
     status: str
     created_at: datetime
+    pix_code: Optional[str] = None
+    pix_qr_code_base64: Optional[str] = None
+    gateway: Optional[str] = "mercadopago"
+    paid_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+class WebhookPayload(BaseModel):
+    action: Optional[str] = None
+    event: Optional[str] = None
+    order_id: Optional[str] = None
+    payment_id: Optional[str] = None
+    data: Optional[dict] = None

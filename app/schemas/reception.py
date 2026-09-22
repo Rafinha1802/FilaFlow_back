@@ -24,6 +24,7 @@ class ReceptionAuthorizeRequest(BaseModel):
 
 class ReceptionPatientResponse(ReceptionPatientBase):
     id: str
+    company_id: Optional[str] = None
     status: str
     auth_code: Optional[str] = None
     ticket_number: Optional[str] = None

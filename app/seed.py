@@ -4,15 +4,34 @@ from app.models.company import Company
 from app.models.queue import Queue
 from app.models.ticket import Ticket
 from app.models.reception import ReceptionPatient
+from app.core.security import get_password_hash
 from datetime import datetime, timedelta
 
 def seed_data():
     Base.metadata.create_all(bind=engine)
     db: Session = SessionLocal()
 
+    default_password_hash = get_password_hash("123456")
+
     try:
         # Check if already seeded
         if db.query(Company).first():
+            # Atualizar eventuais senhas em branco existentes
+            companies_without_pwd = db.query(Company).filter(
+                (Company.hashed_password == None) | (Company.hashed_password == "")
+            ).all()
+            for c in companies_without_pwd:
+                c.hashed_password = default_password_hash
+            
+            # Atualizar pacientes de recepção sem company_id
+            patients_without_company = db.query(ReceptionPatient).filter(
+                (ReceptionPatient.company_id == None) | (ReceptionPatient.company_id == "")
+            ).all()
+            for p in patients_without_company:
+                p.company_id = "clinica-vida"
+
+            if companies_without_pwd or patients_without_company:
+                db.commit()
             return
 
         # 1. Companies
@@ -28,6 +47,7 @@ def seed_data():
                 room="Consultório 04",
                 attendant_name="Dr. Carlos Mendes",
                 email="atendimento@clinicavida.com.br",
+                hashed_password=default_password_hash,
                 phone="(11) 3145-8000"
             ),
             Company(
@@ -41,6 +61,7 @@ def seed_data():
                 room="Box 03",
                 attendant_name="Guichê 03 - Mariana",
                 email="contato@examelab.com.br",
+                hashed_password=default_password_hash,
                 phone="(11) 3322-1100"
             ),
             Company(
@@ -54,6 +75,7 @@ def seed_data():
                 room="Salão Principal",
                 attendant_name="Hostess Bianca",
                 email="reservas@dombistro.com.br",
+                hashed_password=default_password_hash,
                 phone="(11) 3088-9900"
             ),
             Company(
@@ -66,7 +88,8 @@ def seed_data():
                 avg_wait="18 min",
                 room="Cadeira 02",
                 attendant_name="Mestre Rodrigo",
-                email="contato@barbeariadompedro.com.br"
+                email="contato@barbeariadompedro.com.br",
+                hashed_password=default_password_hash
             ),
             Company(
                 id="salao-glam",
@@ -77,7 +100,9 @@ def seed_data():
                 address="Alameda Lorena, 1400",
                 avg_wait="25 min",
                 room="Bancada 01",
-                attendant_name="Camila Hair Stylist"
+                attendant_name="Camila Hair Stylist",
+                email="contato@studioglam.com.br",
+                hashed_password=default_password_hash
             ),
             Company(
                 id="oficina-tech",
@@ -88,7 +113,9 @@ def seed_data():
                 address="Av. Ibirapuera, 2300",
                 avg_wait="30 min",
                 room="Elevador 02",
-                attendant_name="Engenheiro Marcelo"
+                attendant_name="Engenheiro Marcelo",
+                email="contato@autofix.com.br",
+                hashed_password=default_password_hash
             ),
             Company(
                 id="cartorio-central",
@@ -99,7 +126,9 @@ def seed_data():
                 address="Rua São Bento, 405",
                 avg_wait="15 min",
                 room="Guichê 08",
-                attendant_name="Escrevente Juliana"
+                attendant_name="Escrevente Juliana",
+                email="contato@cartoriocentral.com.br",
+                hashed_password=default_password_hash
             )
         ]
         db.add_all(companies)
@@ -229,6 +258,7 @@ def seed_data():
         reception_patients = [
             ReceptionPatient(
                 id="rec-01",
+                company_id="clinica-vida",
                 patient_name="Roberto Albuquerque",
                 document="123.456.789-00",
                 phone="(11) 98123-4567",
@@ -243,6 +273,7 @@ def seed_data():
             ),
             ReceptionPatient(
                 id="rec-02",
+                company_id="clinica-vida",
                 patient_name="Camila Fernandes",
                 document="987.654.321-11",
                 phone="(11) 97654-3210",
@@ -257,6 +288,7 @@ def seed_data():
             ),
             ReceptionPatient(
                 id="rec-03",
+                company_id="clinica-vida",
                 patient_name="Marcos Vinicius",
                 document="456.789.123-22",
                 phone="(11) 99112-8877",
@@ -271,6 +303,7 @@ def seed_data():
             ),
             ReceptionPatient(
                 id="rec-04",
+                company_id="clinica-vida",
                 patient_name="Juliana Menezes",
                 document="332.112.445-99",
                 phone="(11) 98877-6655",

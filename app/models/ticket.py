@@ -1,6 +1,9 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.database import Base
+
+def utcnow():
+    return datetime.now(timezone.utc)
 
 class Ticket(Base):
     __tablename__ = "tickets"
@@ -19,4 +22,7 @@ class Ticket(Base):
     delay_warning = Column(String, nullable=True)
     status_detail = Column(String, nullable=True)
     joined_at = Column(String, nullable=True) # e.g. "14:05"
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    actual_duration_min = Column(Integer, nullable=True)

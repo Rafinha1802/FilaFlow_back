@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from datetime import datetime
 import uuid
 from app.core.database import Base
@@ -7,6 +7,7 @@ class ReceptionPatient(Base):
     __tablename__ = "reception_patients"
 
     id = Column(String, primary_key=True, default=lambda: f"rec-{uuid.uuid4().hex[:8]}")
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, default="clinica-vida")
     patient_name = Column(String, nullable=False)
     document = Column(String, nullable=True) # CPF
     phone = Column(String, nullable=True)

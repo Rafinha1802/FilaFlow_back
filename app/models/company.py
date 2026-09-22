@@ -15,5 +15,6 @@ class Company(Base):
     room = Column(String, default="Consultório 04")
     attendant_name = Column(String, default="Dr. Carlos Mendes")
     email = Column(String, nullable=True)
+    hashed_password = Column(String, nullable=True)
     phone = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
