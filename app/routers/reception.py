@@ -1,0 +1,174 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List, Optional
+from datetime import datetime
+import uuid
+import random
+
+from app.core.database import get_db
+from app.models.reception import ReceptionPatient
+from app.models.ticket import Ticket
+from app.models.queue import Queue
+from app.schemas.reception import (
+    ReceptionPatientResponse,
+    ReceptionPatientCreate,
+    ReceptionAuthorizeRequest
+)
+from app.routers.websocket import ws_manager
+
+router = APIRouter(prefix="/api/reception", tags=["Reception & Insurance"])
+
+@router.get("/waiting-list", response_model=List[ReceptionPatientResponse])
+def get_reception_waiting_list(db: Session = Depends(get_db)):
+    patients = db.query(ReceptionPatient).order_by(ReceptionPatient.created_at.desc()).all()
+    return patients
+
+@router.post("/waiting-list", response_model=ReceptionPatientResponse)
+async def add_reception_patient(payload: ReceptionPatientCreate, db: Session = Depends(get_db)):
+    patient = ReceptionPatient(
+        patient_name=payload.patient_name,
+        document=payload.document,
+        phone=payload.phone,
+        insurance_name=payload.insurance_name or "Unimed",
+        card_number=payload.card_number,
+        procedure=payload.procedure or "Consulta Oftalmologia Geral",
+        doctor_name=payload.doctor_name or "Dr. Carlos Mendes",
+        room=payload.room or "Consultório 04",
+        status="awaiting_auth",
+        is_priority=payload.is_priority or False,
+        notes=payload.notes
+    )
+    db.add(patient)
+    db.commit()
+    db.refresh(patient)
+
+    # Broadcast to secretary dashboard
+    await ws_manager.broadcast({
+        "type": "RECEPTION_PATIENT_ADDED",
+        "patient": {
+            "id": patient.id,
+            "patientName": patient.patient_name,
+            "insuranceName": patient.insurance_name,
+            "status": patient.status
+        }
+    })
+
+    return patient
+
+@router.put("/waiting-list/{patient_id}/status")
+async def update_patient_status(patient_id: str, status: str, db: Session = Depends(get_db)):
+    patient = db.query(ReceptionPatient).filter(ReceptionPatient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado na recepção")
+
+    patient.status = status
+    db.commit()
+    db.refresh(patient)
+
+    await ws_manager.broadcast({
+        "type": "RECEPTION_STATUS_UPDATED",
+        "patientId": patient.id,
+        "status": status
+    })
+
+    return {"message": f"Status atualizado para '{status}'", "patient": patient}
+
+@router.post("/waiting-list/{patient_id}/authorize")
+async def authorize_patient_and_send_to_doctor(
+    patient_id: str,
+    payload: Optional[ReceptionAuthorizeRequest] = None,
+    db: Session = Depends(get_db)
+):
+    patient = db.query(ReceptionPatient).filter(ReceptionPatient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado na recepção")
+
+    queue_id = payload.queue_id if payload and payload.queue_id else "clinica-vida"
+    auth_code = (payload.auth_code if payload and payload.auth_code else None) or f"AUT-{random.randint(10000, 99999)}"
+
+    # Generate ticket number
+    last_ticket = db.query(Ticket).filter(Ticket.queue_id == queue_id).order_by(Ticket.created_at.desc()).first()
+    try:
+        current_num = int(last_ticket.ticket_number.replace("#", "")) if last_ticket else 48
+        next_num = f"#{current_num + 1}"
+    except Exception:
+        next_num = f"#{random.randint(49, 90)}"
+
+    waiting_count = db.query(Ticket).filter(
+        Ticket.queue_id == queue_id,
+        Ticket.status == "waiting"
+    ).count()
+
+    is_priority = payload.is_priority if (payload and payload.is_priority is not None) else patient.is_priority
+    new_position = 1 if is_priority else waiting_count + 1
+
+    # Update reception patient record
+    patient.status = "authorized"
+    patient.auth_code = auth_code
+    patient.ticket_number = next_num
+    patient.authorized_at = datetime.utcnow()
+
+    # Create official Doctor's Queue Ticket
+    new_ticket = Ticket(
+        id=f"ticket-{uuid.uuid4().hex[:6]}",
+        queue_id=queue_id,
+        ticket_number=next_num,
+        customer_name=patient.patient_name,
+        service_name=f"{patient.procedure} ({patient.insurance_name})",
+        status="waiting",
+        position=new_position,
+        is_priority=is_priority,
+        initial_wait_min=(waiting_count + 1) * 10,
+        estimated_wait_text=f"~{(waiting_count + 1) * 10} min",
+        joined_at=datetime.now().strftime("%H:%M")
+    )
+    db.add(new_ticket)
+
+    queue = db.query(Queue).filter(Queue.id == queue_id).first()
+    if queue:
+        queue.current_waiting += 1
+
+    db.commit()
+    db.refresh(patient)
+
+    # Broadcast event to doctor dashboard, TV panel and mobile app
+    event_data = {
+        "type": "PATIENT_AUTHORIZED_FOR_DOCTOR",
+        "patientId": patient.id,
+        "patientName": patient.patient_name,
+        "insuranceName": patient.insurance_name,
+        "authCode": auth_code,
+        "ticket": {
+            "id": new_ticket.id,
+            "ticket": new_ticket.ticket_number,
+            "name": new_ticket.customer_name,
+            "service": new_ticket.service_name,
+            "time": new_ticket.estimated_wait_text,
+            "isPriority": new_ticket.is_priority
+        }
+    }
+    await ws_manager.broadcast(event_data)
+
+    return {
+        "message": f"Convênio {patient.insurance_name} autorizado com sucesso! Senha {next_num} enviada para a fila do médico.",
+        "authCode": auth_code,
+        "ticketNumber": next_num,
+        "patient": patient,
+        "doctorTicket": {
+            "ticket": new_ticket.ticket_number,
+            "name": new_ticket.customer_name,
+            "service": new_ticket.service_name,
+            "time": new_ticket.estimated_wait_text,
+            "isPriority": new_ticket.is_priority
+        }
+    }
+
+@router.delete("/waiting-list/{patient_id}")
+def remove_reception_patient(patient_id: str, db: Session = Depends(get_db)):
+    patient = db.query(ReceptionPatient).filter(ReceptionPatient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Paciente não encontrado")
+
+    db.delete(patient)
+    db.commit()
+    return {"message": "Paciente removido da lista de espera da recepção"}
